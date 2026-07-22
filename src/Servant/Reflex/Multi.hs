@@ -58,6 +58,9 @@ import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
                                           RemoteHost, ReqBody,
                                           ToHttpApiData (..), Vault, Verb,
                                           contentType)
+#if MIN_VERSION_servant(0,17,0)
+import           Servant.API             (NoContentVerb)
+#endif
 import           Servant.API.Description (Summary)
 
 import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
@@ -166,6 +169,19 @@ instance {-# OVERLAPPING #-}
   clientWithRouteMulti Proxy _ _ _ req baseurl opts =
     performRequestsNoBody method req baseurl opts
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+
+#if MIN_VERSION_servant(0,17,0)
+------------------------------------------------------------------------------
+-- -- NoContentVerb (servant >= 0.17) --
+instance
+  (ReflectMethod method, SupportsServantReflex t m, Traversable f) =>
+  HasClientMulti t m (NoContentVerb method) f tag where
+  type ClientMulti t m (NoContentVerb method) f tag =
+    Event t tag -> m (Event t (f (ReqResult tag NoContent)))
+  clientWithRouteMulti Proxy _ _ _ req baseurl opts =
+    performRequestsNoBody method req baseurl opts
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+#endif
 
 
 ------------------------------------------------------------------------------

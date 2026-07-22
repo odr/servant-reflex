@@ -61,6 +61,9 @@ import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
                                           RemoteHost, ReqBody,
                                           ToHttpApiData (..), Vault, Verb,
                                           contentType)
+#if MIN_VERSION_servant(0,17,0)
+import           Servant.API             (NoContentVerb)
+#endif
 import           Servant.API.Description (Summary)
 
 import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
@@ -223,6 +226,19 @@ instance {-# OVERLAPPING #-}
   clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs =
     wrap =<< fmap  runIdentity <$> performRequestsNoBody method (constDyn $ Identity req) baseurl opts trigs
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+
+#if MIN_VERSION_servant(0,17,0)
+-- -- NoContentVerb (servant >= 0.17; e.g. DeleteNoContent / PostNoContent) --
+instance
+  (ReflectMethod method, SupportsServantReflex t m) =>
+  HasClient t m (NoContentVerb method) tag where
+  type Client t m (NoContentVerb method) tag =
+    Event t tag -> m (Event t (ReqResult tag NoContent))
+  clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs =
+    wrap =<< fmap runIdentity <$> performRequestsNoBody method
+      (constDyn $ Identity req) baseurl opts trigs
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+#endif
 
 
 toHeaders :: BuildHeadersTo ls => ReqResult tag a -> ReqResult tag (Headers ls a)
