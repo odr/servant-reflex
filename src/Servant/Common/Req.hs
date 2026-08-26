@@ -23,6 +23,7 @@ import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Builder    as Builder
 import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.ByteString            (ByteString)
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes, fromMaybe)
 import           Data.Functor.Compose
@@ -160,12 +161,7 @@ prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
--- Use toUrlPiece, not decodeUtf8 . toHeader.
--- The latter fails on non-ASCII values with GHCJS / JS backend.
--- It seems that the "decodeUtf8 . encodeUtf8" round-trip rebuilds Text in a form that later list map crashes on.
-addHeader name val req =
-  -- req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
-  req { headers = (name, (fmap . fmap) toUrlPiece val) : headers req }
+addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
 
 
 reqToReflexRequest
