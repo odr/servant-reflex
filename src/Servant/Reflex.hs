@@ -647,7 +647,8 @@ instance GClientConstraints t m tag api => GClient t tag api m where
   gClientProof = Dict
 
 instance
-  ( forall n. GClient t tag api n
+  ( Monad m
+  , forall n. GClient t tag api n
   , HasClient t m (ToServantApi api) tag
   ) => HasClient t m (NamedRoutes api) tag where
   type Client t m (NamedRoutes api) tag = api (AsClientT t m tag)
