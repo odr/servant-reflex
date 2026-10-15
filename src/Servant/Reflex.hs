@@ -1,13 +1,16 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -33,6 +36,9 @@ module Servant.Reflex
   , toHeaders
   , HasClient
   , Client
+  , AsClientT
+  , (//)
+  , (/:)
   , module Servant.Common.Req
   , module Servant.Common.BaseUrl
   ) where
@@ -65,6 +71,11 @@ import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
 import           Servant.API             (NoContentVerb)
 #endif
 import           Servant.API.Description (Summary)
+#if MIN_VERSION_servant(0,19,0)
+import           Servant.API             (NamedRoutes)
+import           Servant.API.Generic     (GenericMode (..), GenericServant,
+                                          ToServant, ToServantApi, fromServant)
+#endif
 
 import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
                                           XhrRequest (..), XhrResponse (..),
@@ -588,6 +599,64 @@ instance (HasClient t m api tag, Reflex t)
     clientWithRouteAndResultHandler (Proxy :: Proxy api) q t req' baseurl opts wrap
       where
         req'    = req { authData = Just authdata }
+
+
+infixl 1 //
+infixl 2 /:
+
+-- | 'x // f' is 'f x'. Field access for a record of clients:
+--
+-- > routes // field
+(//) :: a -> (a -> b) -> b
+x // f = f x
+
+-- | Supply the next argument of a client function, leaving the record
+-- (or the remaining function) on the left of '//'.
+--
+-- > (//) and (/:) associate so that
+-- > routes // captureField /: dynArg // nested
+-- > reads the field, applies @dynArg@, then reads the next field.
+(/:) :: (a -> b -> c) -> b -> a -> c
+(/:) = flip
+
+#if MIN_VERSION_servant(0,19,0)
+-- | A record of reflex client functions. @AsClientT t m tag :- api@ is
+-- 'Client' @t m api tag@.
+data AsClientT (t :: Type) (m :: Type -> Type) (tag :: Type)
+
+instance GenericMode (AsClientT t m tag) where
+  type AsClientT t m tag :- api = Client t m api tag
+
+-- | Evidence for a constraint, so the 'NamedRoutes' instance can quantify
+-- over the client monad without putting type-family equalities in the head.
+data Dict c where
+  Dict :: c => Dict c
+
+type GClientConstraints t m tag api =
+  ( GenericServant api (AsClientT t m tag)
+  , Client t m (ToServantApi api) tag ~ ToServant api (AsClientT t m tag)
+  )
+
+-- | Delayed proof that a route record's ':<|>' client matches 'ToServant'.
+-- The quantified constraint in 'HasClient' for 'NamedRoutes' needs this
+-- indirection: the equality mentions type families.
+class GClient t tag (api :: Type -> Type) m where
+  gClientProof :: Dict (GClientConstraints t m tag api)
+
+instance GClientConstraints t m tag api => GClient t tag api m where
+  gClientProof = Dict
+
+instance
+  ( forall n. GClient t tag api n
+  , HasClient t m (ToServantApi api) tag
+  ) => HasClient t m (NamedRoutes api) tag where
+  type Client t m (NamedRoutes api) tag = api (AsClientT t m tag)
+
+  clientWithRouteAndResultHandler _ q pTag req baseurl opts wrap =
+    case gClientProof :: Dict (GClientConstraints t m tag api) of
+      Dict -> fromServant $ clientWithRouteAndResultHandler
+        (Proxy :: Proxy (ToServantApi api)) q pTag req baseurl opts wrap
+#endif
 
 -- instance HasClient t m subapi =>
 --   HasClient t m (WithNamedConfig name config subapi) where
